@@ -1,9 +1,6 @@
-use std::collections::HashMap;
-use std::collections::HashSet;
-
 pub fn main() {
     println!("Day10");
-    problem2(include_str!("puzzle.txt"));
+    println!("Summed result: {}", problem2(include_str!("puzzle.txt")));
 }
 
 #[derive(Debug, PartialEq, Clone, Eq)]
@@ -82,122 +79,136 @@ fn solve1(m: Machine) -> i32 {
 }
 
 fn solve2(m: Machine) -> usize {
-    let mut bidx_map: HashMap<usize, Vec<usize>> = HashMap::new();
-    for (i, _) in m.joltage.iter().enumerate() {
-        bidx_map.insert(i, Vec::new());
-    }
-    for (bidx, b) in m.buttons.iter().enumerate() {
-        for lidx in b {
-            bidx_map.get_mut(lidx).unwrap().push(bidx);
-        }
-    }
-    for (_, v) in bidx_map.iter_mut() {
-        v.sort_by(|a, b| m.buttons[*a].len().cmp(&m.buttons[*b].len()));
-    }
+    let y = m.joltage.clone();
+    let x: Vec<Vec<usize>> = y
+        .iter()
+        .enumerate()
+        .map(|(v, _)| {
+            m.buttons
+                .iter()
+                .map(|b| if b.contains(&v) { 1 } else { 0 })
+                .collect()
+        })
+        .collect();
 
-    let btn_cnt = m.buttons.len();
-    let joltage_min = *m.joltage.iter().min().unwrap();
-
-    println!("Need to solve: {:?}", m.joltage);
-    let mut joltages = m.joltage.clone();
-    let mut precompute_presses = 0;
-    let joltage_to_reduce = btn_cnt;
-    if joltage_to_reduce < joltage_min {
-        let to_solve = m.joltage.iter().map(|_| joltage_to_reduce).collect();
-        let mut precompute_best_presses = usize::MAX;
-        recsolve(
-            &to_solve,
-            &m.buttons,
-            0,
-            &mut precompute_best_presses,
-            &bidx_map,
-            vec![0; m.buttons.len()],
-            &mut HashSet::new(),
-        );
-        println!(
-            "  Precompute: Took {} to solve {:?}",
-            precompute_best_presses, to_solve
-        );
-        precompute_presses = precompute_best_presses;
-
-        joltages = joltages.iter().map(|v| v - joltage_to_reduce).collect();
+    for i in 0..x.len() {
+        println!("{} = {:?}", y[i], x[i]);
     }
 
-    println!("  Solving remaining: {:?}", joltages);
-    let mut best_presses = usize::MAX;
-    recsolve(
-        &joltages,
-        &m.buttons,
-        0,
-        &mut best_presses,
-        &bidx_map,
-        vec![0; m.buttons.len()],
-        &mut HashSet::new(),
-    );
-    precompute_presses + best_presses
+    let mut best_presses = isize::MAX as usize;
+
+    return recsolve(&y, &x, vec![usize::MAX; m.buttons.len()], &mut best_presses)
+        .iter()
+        .sum();
+}
+//34 = [1, 1, 1, 0, 0, 0, 0]
+//18 = [0, 1, 0, 1, 1, 0, 1]
+//43 = [1, 0, 1, 0, 0, 1, 1]
+//15 = [1, 0, 0, 1, 0, 0, 0]
+//16 = [0, 1, 0, 1, 0, 0, 1]
+
+fn calculate_remaining(y: &Vec<usize>, x: &Vec<Vec<usize>>, a: &Vec<usize>) -> Vec<isize> {
+    x.iter()
+        .map(|row| {
+            row.iter()
+                .enumerate()
+                .map(|(b, v)| if a[b] == usize::MAX { 0 } else { v * a[b] })
+                .sum::<usize>()
+        })
+        .enumerate()
+        .map(|(i, v)| y[i] as isize - v as isize)
+        .collect()
 }
 
 fn recsolve(
-    joltages_remaining: &Vec<usize>,
-    buttons: &Vec<Vec<usize>>,
-    presses: usize,
-    best_press: &mut usize,
-    bidx_map: &HashMap<usize, Vec<usize>>,
-    btn_presses: Vec<usize>,
-    visited: &mut HashSet<Vec<usize>>,
-) {
-    if presses >= *best_press || visited.contains(&btn_presses) {
-        return;
-    }
-
-    let sum_remaining: usize = joltages_remaining.iter().sum();
-    if sum_remaining == 0 {
-        *best_press = usize::min(*best_press, presses);
-        println!(
-            "Found button combination {:?} of presses: {}",
-            btn_presses, presses
-        );
-        return;
-    }
-
-    visited.insert(btn_presses.clone());
-
-    let remaining = *joltages_remaining
+    y: &Vec<usize>,
+    x: &Vec<Vec<usize>>,
+    a: Vec<usize>,
+    best_presses: &mut usize,
+) -> Vec<usize> {
+    let current_presses: Vec<usize> = a
         .iter()
-        .filter(|l| **l > 0 as usize)
-        .min()
-        .unwrap();
-    for (i, v) in joltages_remaining.iter().enumerate() {
-        if *v == remaining {
-            for bidx in bidx_map.get(&i).unwrap() {
-                let b = &buttons[*bidx];
-                let mut skip = false;
-                let mut toggle = joltages_remaining.clone();
-                for l in b {
-                    if toggle[*l] == 0 {
-                        skip = true;
-                        break;
-                    }
-                    toggle[*l] = toggle[*l] - 1;
-                }
+        .map(|&v| if v == usize::MAX { 0 } else { v })
+        .collect();
 
-                if !skip {
-                    let mut bn = btn_presses.clone();
-                    bn[*bidx] += 1;
-                    recsolve(
-                        &toggle,
-                        buttons,
-                        presses + 1,
-                        best_press,
-                        bidx_map,
-                        bn,
-                        visited,
-                    );
-                }
+    let res: Vec<usize> = x
+        .iter()
+        .map(|row| {
+            row.iter()
+                .enumerate()
+                .map(|(b, v)| current_presses[b] * v)
+                .sum()
+        })
+        .collect();
+
+    //println!("Presses: {:?}", a);
+
+    let presses = current_presses.iter().sum::<usize>();
+    if &res == y {
+        println!(
+            "  Found solution: {:?}, presses {}",
+            current_presses, presses
+        );
+        if presses < *best_presses {
+            *best_presses = presses;
+        }
+        return current_presses;
+    }
+
+    let mut best = vec![usize::MAX];
+
+    //Find list with least unknowns
+    let row_opt = x
+        .iter()
+        .enumerate()
+        .map(|(i, row)| {
+            (
+                i,
+                row.iter()
+                    .enumerate()
+                    .map(|(i, v)| if *v > 0 && a[i] == usize::MAX { 1 } else { 0 })
+                    .sum::<usize>(),
+            )
+        })
+        .filter(|&v| v.1 > 0)
+        .min_by_key(|(_, v)| *v);
+
+    if row_opt.is_none() {
+        return best;
+    }
+
+    let row = row_opt.unwrap();
+    let first_unknown_opt = x[row.0]
+        .iter()
+        .enumerate()
+        .filter(|&(i, v)| *v > 0 && a[i] == usize::MAX)
+        .next();
+    if first_unknown_opt.is_none() {
+        return best;
+    }
+    let first_unknown = first_unknown_opt.unwrap().0;
+    let max_value = y[row.0] - res[row.0];
+
+    let from = if row.1 == 1 { max_value } else { 0 };
+
+    for v in from..=max_value {
+        let mut new_presses = a.clone();
+        new_presses[first_unknown] = v;
+
+        let delta = calculate_remaining(y, x, &new_presses);
+        if *delta.iter().min().unwrap() >= 0
+            && *delta.iter().max().unwrap() as usize + presses + v < *best_presses
+        {
+            let act = recsolve(y, x, new_presses, best_presses);
+            let a: usize = act.iter().sum();
+            if a < best.iter().sum() {
+                best = act;
             }
-            break;
         }
     }
+
+    //Iterate over options and do recursive calls. Compare return value and return smallest
+    best
 }
 
 fn problem1(s: &str) -> i32 {
@@ -215,9 +226,7 @@ fn problem2(s: &str) -> usize {
         .enumerate()
         .map(|(i, l)| {
             println!("Starting on machine {} / {}", i + 1, c);
-            let res = solve2(parse(l));
-            println!("Result was {}", res);
-            return res;
+            return solve2(parse(l));
         })
         .sum()
 }
@@ -231,21 +240,14 @@ mod tests {
         //assert_eq!(7, problem1(include_str!("test_puzzle.txt")));
         //assert_eq!(494, problem1(include_str!("puzzle.txt")));
 
-        //assert_eq!(33, problem2(include_str!("test_puzzle.txt")));
+        assert_eq!(33, problem2(include_str!("test_puzzle.txt")));
         assert_eq!(
-            49,
-            problem2("[##.##] (0,2,3) (0,1,4) (0,2) (1,3,4) (1) (2) (1,2,4) {34,18,43,15,16}")
-        );
-        assert_eq!(
-            60,
-            problem2("[..#.] (1,2) (0,3) (0,2,3) (0,2) (1,2,3) {40,20,48,29}")
-        );
-        assert_eq!(
-            40,
+            145,
             problem2(
-                "[.#...#..] (1,3,5,6,7) (1,3,4,5,6) (1,5) (1,7) (0,1,2,5,6,7) (0,5) (0,1,2,3,4,7) (1,3,4,5,6,7) {13,38,11,7,7,20,18,31}"
+                "[...####.#.] (0,3,4,6) (0,1,3,5,7,8) (2,3,7) (0,1,2,6,7,8,9) (0,6,9) (0,3,4,5,7,8) (1) (3,8,9) (6,9) (4,5,6,7,8,9) (1,2,3,5,6,7,8,9) (0,4,5,6,8) {76,63,42,74,41,53,91,81,69,72} "
             )
         );
-        assert_eq!(0, problem2(include_str!("puzzle.txt")));
+
+        //assert_eq!(0, problem2(include_str!("puzzle.txt")));
     }
 }
